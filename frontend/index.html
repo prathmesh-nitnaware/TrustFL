@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Server - Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
+        .mini-metric { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; text-align: center; }
+        .mini-metric h4 { margin: 0; color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
+        .mini-metric .value { font-size: 24px; font-weight: bold; color: var(--accent); margin-top: 5px; }
+        .client-list { display: flex; flex-direction: column; gap: 10px; }
+        .client-item { display: flex; justify-content: space-between; background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 5px; border-left: 3px solid #00FFC2; }
+        .client-item.disconnected { border-left-color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <div class="logo">
+                <i class="fa-solid fa-cloud-bolt"></i> 
+                <span>Server Admin Monitoring Panel</span>
+            </div>
+            <div class="status-badge" id="globalStatus">Status: Idle</div>
+        </header>
+
+        <main class="grid-container">
+            <!-- Global Training Status & Model Info -->
+            <section class="card control-panel full-width">
+                <h2><i class="fa-solid fa-earth-americas"></i> Global Model Info</h2>
+                <div class="metric-grid">
+                    <div class="mini-metric">
+                        <h4>Current Round</h4>
+                        <div class="value"><span id="currentRound">0</span> / 50</div>
+                    </div>
+                    <div class="mini-metric">
+                        <h4>Active Connected Clients</h4>
+                        <div class="value" id="connectedCount">0</div>
+                    </div>
+                    <div class="mini-metric">
+                        <h4>Model Version</h4>
+                        <div class="value" id="modelVersion" style="color: #64b5f6;">v1.0.0</div>
+                    </div>
+                </div>
+                <div style="font-size: 0.9em; color:#a3b8cc;">Last Updated: <span id="lastUpdated" style="color: white">Never</span></div>
+                
+                <h3 style="margin-top: 20px;"><i class="fa-solid fa-shield-halved"></i> Security Metrics</h3>
+                <div style="font-size: 0.9em; color:#a3b8cc;">Failed Authentication Attempts: <span id="failedAuth" style="color: #ff4444; font-weight: bold;">0</span></div>
+            </section>
+
+            <!-- Client Monitoring Panel -->
+            <section class="card">
+                <h2><i class="fa-solid fa-hospital-user"></i> Client Node Monitoring</h2>
+                <p style="font-size: 0.8em; color: gray;">Live authenticated hospital nodes connected to the exchange.</p>
+                <div class="client-list" id="clientList">
+                    <!-- Client items dynamically inserted here -->
+                </div>
+            </section>
+            
+            <!-- Fairness Metrics -->
+            <section class="card">
+                <h2><i class="fa-solid fa-scale-balanced"></i> Fairness Analytics (q-FedAvg)</h2>
+                <p style="font-size: 0.8em; color: gray;">Performance disparity mapping across nodes.</p>
+                <div id="fairnessProof" style="margin-top:20px; font-size: 0.9em; color:#00FFC2; line-height: 1.6;">
+                    No fairness gaps verified yet.
+                </div>
+            </section>
+
+            <!-- Visualization Charts -->
+            <section class="card full-width">
+                <h2><i class="fa-solid fa-chart-line"></i> Performance Convergence Graphs</h2>
+                <div style="display: flex; gap: 20px; height: 300px;">
+                    <div style="flex: 1; height: 100%;">
+                        <canvas id="accuracyChart"></canvas>
+                    </div>
+                    <div style="flex: 1; height: 100%;">
+                        <canvas id="lossChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Server Logs Terminal -->
+            <section class="card logs-panel full-width">
+                <h2><i class="fa-solid fa-terminal"></i> Distributed Aggregation Logs</h2>
+                <div class="terminal" id="terminal"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

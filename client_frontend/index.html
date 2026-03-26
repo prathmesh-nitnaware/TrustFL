@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Node UI - Local Secure FL</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="client-dashboard">
+        <header>
+            <div class="logo">
+                <i class="fa-solid fa-hospital-user"></i>
+                <span>Hospital Local Sandbox</span>
+            </div>
+            <div class="network-badge">Disconnected from Global Network</div>
+        </header>
+
+        <main class="grid-layout">
+            <section class="card form-panel">
+                <h2><i class="fa-solid fa-satellite-dish"></i> Connect to Network</h2>
+                
+                <div class="input-group">
+                    <label>Central Network URL</label>
+                    <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://192.168.1.50:8000">
+                </div>
+
+                <div class="input-group">
+                    <label>Link Local Hospital Drive (Mapped to Kaggle IDs)</label>
+                    <select id="datasetId">
+                        <option value="0">Data drive A - Paul Mooney DB</option>
+                        <option value="1">Data drive B - COVID Radiography</option>
+                        <option value="2">Data drive C - NIH Chest X-Ray</option>
+                        <option value="3">Data drive D - Prashant Set</option>
+                        <option value="4">Data drive E - Curated Database</option>
+                    </select>
+                </div>
+                
+                <div class="input-group">
+                    <label>Available On-Prem Computing Power</label>
+                    <select id="hardwareScale">
+                        <option value="1.0">1.0 - High End (Tesla V100 Equivalent)</option>
+                        <option value="0.5">0.5 - Mobile / Legacy Specs</option>
+                    </select>
+                </div>
+
+                <button id="uploadBtn" class="btn"><i class="fa-solid fa-upload"></i> Initialize Federated Exchange</button>
+            </section>
+            
+            <section class="card status-panel">
+                <h2><i class="fa-solid fa-microchip"></i> Local Output Pipeline</h2>
+                <div class="status-indicator" id="currState">Idle</div>
+                <div class="console">
+                    <p id="msgLog">System ready. Select a dataset footprint to simulate the local hospital.</p>
+                </div>
+                
+                <div class="security-note">
+                    <i class="fa-solid fa-lock"></i> Raw pixel data will <strong>never</strong> breach the hospital firewall. Gradients transmit encrypted strictly via Microsoft TenSEAL CKKS.
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

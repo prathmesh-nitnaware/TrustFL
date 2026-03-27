@@ -1,77 +1,95 @@
-# 🏥 Fairness-Aware and Privacy-Preserving Federated Learning System for Healthcare
+# 🏥 TrustFL — Privacy-Preserving Federated Learning Platform
 
-A production-ready, distributed machine learning architecture designed to collaboratively train a disease detection model (Pneumonia, COVID-19, Normal) across multiple independent hospital nodes without *ever* exchanging raw patient data.
+A production-ready distributed machine learning architecture designed to collaboratively train AI models across multiple independent nodes without *ever* exchanging raw data.
+
+---
+
+## 📖 Project Description & Overview
+
+**TrustFL** is an advanced, decentralised machine learning platform built to solve the biggest hurdle in healthcare and enterprise AI: **Data Privacy & Silos**.
+
+Traditionally, to train powerfully accurate AI models, organisations must pool their datasets into a single, centralized database. In sectors like healthcare, finance, and enterprise, this is often impossible due to strict data privacy regulations (like HIPAA, GDPR), proprietary concerns, and security risks. 
+
+**The Solution: Federated Learning**
+Instead of bringing the data to the model, TrustFL brings the *model to the data*. \
+With TrustFL, multiple hospitals, companies, or individuals can collaboratively train a single global AI model. Each participant (Client Node) securely uploads their own tabular dataset locally, trains a neural network strictly on their own machine, and then only sends the mathematically derived **"model weights"** (the learned intelligence) back to a Central Server. 
+
+The Server then performs **Federated Averaging (FedAvg)**—mathematically combining the intelligence of all participants into one highly accurate, unbiased "Global Model." This global model is then sent back down to the clients, allowing them to make predictions using the collective intelligence of the entire network, while ensuring their original raw tabular data never left their private network.
+
+### Why TrustFL?
+- **Absolute Privacy:** Raw data never traverses the internet.
+- **Universal Adaptability:** Capable of automatically digesting *any* structural tabular dataset (CSV/Excel) and dynamically constructing a neural network for it.
+- **Fairness & Reduced Bias:** By learning from diverse, decentralised datasets, the model avoids the demographic biases common in localized training.
+- **Transparent Monitoring:** A real-time Central Dashboard allows administrators to monitor the network's health, training rounds, accuracy improvements, and fairness metrics without ever seeing the underlying data.
 
 ---
 
 ## 🎯 Core Features
 
-### 1. 🔒 Absolute Privacy (Homomorphic Encryption)
-* **TenSEAL (CKKS)** is uniquely integrated into the torch pipeline.
-* While standard Federated Learning transmits raw gradient models (vulnerable to Deep Leakage from Gradients - DLG attacks), this architecture **encrypts** the extracted submodel weights before transmission.
-* The Server Aggregator performs mathematical averages on *encrypted ciphertext*, keeping data completely blind to the central server.
-* Bearer Token API security explicitly protects the aggregation endpoints from rogue nodes.
+### 1. 🔒 Absolute Privacy & Authentication
+* **Local Training Only:** Raw data (CSV/Excel) never leaves the client's machine. Only the mathematically derived model weights are sent to the central server.
+* **JWT Authentication:** Secure JWT-based login and signup system explicitly protects the client portals and aggregation endpoints.
+* **Database Persistence:** Stores user accounts, training sessions, and federated rounds locally via JSON (easily upgradable to PostgreSQL).
 
-### 2. ⚖️ Fairness & Dynamic Scaling (HeteroFL + q-FedAvg)
-* **Resource Scaling:** Hospitals define their compute availability (`1.0x` or `0.5x`). The system slices the `HealthcareCNN` architecture dynamically, meaning low-end clinical laptops and high-end research GPUs can collaborate securely on the *exact same* federated model.
-* **Fairness Mapping (q-FedAvg):** The server calculates Cross-Entropy loss gaps during aggregation. Sub-models that are struggling statistically are assigned mathematically heavier weights, preventing demographic biases from skewing the final model.
+### 2. 📊 Universal Tabular Support (GenericMLP)
+* **Custom Dataset Uploads:** Drag-and-drop any CSV or Excel tabular dataset directly into the client interface.
+* **Dynamic Architecture:** The neural network (`GenericMLP`) automatically adapts its input layers, hidden layers, and output size based on the specific columns and target class of your dataset.
+* **Auto-Preprocessing:** Automatically handles missing values, categorical label encoding, and feature scaling.
 
-### 3. 🛡️ Fault Tolerance & Partial Aggregation
-* Real-world networks drop out. An asynchronous `timeout_watcher()` actively polls heartbeat metrics from connected client interfaces. 
-* If a hospital node disconnects mid-training or stalls drastically, the system dynamically calculates a **Partial Aggregation** on the survived nodes after `60 seconds`, avoiding gridlock.
+### 3. ⚖️ Federated Averaging (FedAvg)
+* If **1 node** trains: The model is used directly as the global model.
+* If **2+ nodes** train: The central server performs **Federated Averaging (FedAvg)**, mathematical weight aggregation across all participants to create a stronger global model.
+* Clients can choose to predict using their isolated *local model* or the collaborative *global federated model*.
 
-### 4. 📈 Non-IID Distribution Footprints
-* Datasets across real hospitals are naturally Non-Independent and Identically Distributed (Non-IID).
-* To simulate and mathematically prove this resilience, nodes process multi-dimensional distributions actively downloaded securely from localized Kaggle mappings, presenting statistical proof of disparate label pools safely.
+### 4. 🌐 Real-Time Dual UI Dashboards
 
----
-
-## 🖥️ The Dual UI Architecture
-
-The system features two completely separated bounds of UI logic to mirror real-world roles:
-
-### 🌐 1. Server UI (Central Monitoring Dashboard)
+**1. Server UI (Central Monitoring Dashboard)**
 * **Role:** AI Administrator / Root Aggregator.
-* **Function:** Monitors the global training state, client active/disconnected heartbeats, live loss/accuracy charts, failed authorization traces, and fairness metrics explicitly.
-* **No Local Access:** System actively enforces blindness—no image viewing, no individual patient testing.
+* **Function:** Monitors the global training state in real-time. Views live registered users, connected heartbeats, active sessions, and live Chart.js graphs tracking Accuracy and Loss per federated round. Tracks Fairness Analytics explicitly.
 
-### 🏥 2. Client UI (Hospital Node Sandbox)
-* **Role:** Individual Doctor / Clinical Operator.
-* **Function:** Binds to isolated datasets representing unique geographical clinical drives. Operators specify connection endpoints, hardware limits, and initiate encrypted Local-Epoch runs.
-* **No Global Vision:** Exclusively processes its own distributions, blind to other network participants.
+**2. Client UI (Node Sandbox)**
+* **Role:** Individual Operator / Data Owner.
+* **Function:** Binds to isolated datasets. A beautifully designed 4-step workflow: Server Config → Dataset Upload → Model Training → Predictions.
 
 ---
 
 ## 🚀 How to Run the Distributed System
 
 ### Step 1: Initialize the Central Aggregation Server (Admin)
-1. Open a new terminal.
-2. Navigate to the `backend/` directory.
+This is the machine that aggregates weights. It should be accessible on your network.
+
+1. Open a terminal and navigate to the `backend/` directory.
+2. Install dependencies:
+```bash
+pip install torch fastapi uvicorn requests pandas scikit-learn bcrypt pyjwt python-multipart openpyxl
+```
 3. Start the FastAPI Uvicorn engine:
 ```bash
-cd backend
-uvicorn server:app --port 8000
+python -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
-4. Open the Server Dashboard globally at: **[http://localhost:8000](http://localhost:8000)**
+4. Open the Server Dashboard at: **[http://localhost:8000](http://localhost:8000)**
 
-### Step 2: Initialize Hospital Clients (Nodes)
-1. Open *another* terminal (or launch this on entirely different physical laptops on the same Wi-Fi).
-2. Start the local Hospital Interface wrapper:
+### Step 2: Initialize Client Nodes
+You can run this on the same machine or *on entirely different laptops on the same Wi-Fi/LAN*.
+
+1. Copy the project to the client machine and install dependencies.
+2. Open a terminal and start the Client App:
 ```bash
 cd backend
 python client_app.py
 ```
-3. Open the Medical Dashboard locally at: **[http://localhost:8001](http://localhost:8001)**
-4. Provide the correct `Central Network URL` (e.g., `http://localhost:8000` or the IPv4 address `http://192.168.x.x:8000`), pick a dataset constraint, and initialize the federated exchange.
-
-*To achieve true mathematical verification, spin up multiple Client terminals using different dataset identifiers to prove the Non-IID multi-institutional architecture is active!*
+3. Open the Client Dashboard at: **[http://localhost:8001](http://localhost:8001)**
+4. In the Client UI Step 1 (Server Configuration):
+   - If running on the same PC: keep `http://localhost:8000`
+   - If running on a different PC: enter the Server's IP (e.g., `http://192.168.1.100:8000`)
+5. Create an account, upload a dataset, and click Train!
 
 ---
 
 ## 💻 Tech Stack
-- **Backend Infrastructure:** Python, PyTorch, FastAPI, Uvicorn, Asyncio
-- **Privacy Enforcement:** Microsoft TenSEAL (CKKS Scheme)
-- **Frontend / Dashboards:** HTML5, CSS3, JavaScript (Fetch API), Chart.js 
-- **Data Mapping:** KaggleHub, Torchvision
+- **Backend Infrastructure:** Python, PyTorch, FastAPI, Uvicorn
+- **Data Pipeline:** Pandas, Scikit-Learn
+- **Security:** PyJWT, bcrypt
+- **Frontend / Dashboards:** HTML5, CSS3, Vanilla JavaScript, Chart.js 
 
-*Designed to demonstrate enterprise-level ML security structures emphasizing network fault tolerance, bias-mitigation, and cryptographic privacy.*
+*Designed to demonstrate enterprise-level ML security structures emphasizing network collaboration, dynamic data adaptation, and cryptographic privacy.*

@@ -6,5 +6,9 @@ requests
 matplotlib
 numpy
 scikit-learn
-medmnist
 tenseal
+pyjwt
+pandas
+python-multipart
+bcrypt
+openpyxl

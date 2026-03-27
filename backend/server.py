@@ -1,24 +1,32 @@
+"""
+TrustFL Central Aggregation Server
+- JWT Authentication with PostgreSQL
+- Generic Federated Learning (any tabular dataset)  
+- Real-time dashboard analytics
+- FedAvg aggregation for 2+ clients
+"""
 import torch
-import torchvision.transforms as transforms
-from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks, Depends, HTTPException, Request
+import numpy as np
+from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import List, Dict
+from typing import List, Dict, Optional
 import io
-import tenseal as ts
 import pickle
-import subprocess
-from PIL import Image
+import json
 import time
 import asyncio
-from datetime import datetime
+import bcrypt
+import jwt
+import os
+from datetime import datetime, timedelta
 
-from models import HealthcareCNN, extract_submodel_weights, insert_submodel_weights
-from he_utils import aggregate_encrypted_chunks, decrypt_and_decode, encode_and_encrypt
+from models import GenericMLP
+from db import init_db, create_user, get_user_by_email, update_last_login, save_training_session, save_federated_round, get_all_users_count, get_recent_sessions, get_user_by_id
 
-app = FastAPI(title="Healthcare FL Server - Privacy & Fairness Aware")
+# ── App Setup ──────────────────────────────────────────────────────────────────
+app = FastAPI(title="TrustFL - Federated Learning Server")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,280 +35,442 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-security = HTTPBearer()
-VALID_TOKEN = "secure_hospital_token_2026"
-failed_auth_attempts = 0
+JWT_SECRET = os.getenv("JWT_SECRET", "trustfl_secret_key_2026_change_in_production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = 24
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    global failed_auth_attempts
-    if credentials.credentials != VALID_TOKEN:
-        failed_auth_attempts += 1
-        raise HTTPException(status_code=401, detail="Unauthorized Server Access")
+# ── Federated Learning State ──────────────────────────────────────────────────
+# Stores model weights from each client, keyed by a model config hash
+client_updates: List[Dict] = []
+client_metrics: List[Dict] = []
+global_model_weights: Optional[Dict] = None
+global_model_config: Optional[Dict] = None  # {input_features, num_classes}
 
-GLOBAL_C, GLOBAL_NUM_CLASSES = 1, 3
-global_model = HealthcareCNN(in_channels=GLOBAL_C, num_classes=GLOBAL_NUM_CLASSES, width_scale=1.0)
-global_state = global_model.state_dict()
-
-client_updates = []
-client_metrics = []  
-
-context = ts.context(ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192, coeff_mod_bit_sizes=[60, 40, 40, 60])
-context.generate_galois_keys()
-context.global_scale = 2**40
+# Connected user tracking
+connected_users: Dict[str, Dict] = {}  # user_id -> {username, status, last_seen, ...}
+online_users: Dict[str, float] = {}  # user_id -> last_heartbeat_timestamp
 
 system_status = {
     "round": 0,
     "status": "Idle",
-    "logs": ["Aggregation server active. Waiting for secure inbound connections..."],
-    "metrics": [],
-    "distributions": [],     
-    "accuracy_history": [],  
+    "logs": ["🚀 TrustFL Aggregation Server initialized. Waiting for client connections..."],
+    "accuracy_history": [],
     "loss_history": [],
-    "connected_clients": {}, # For active monitoring
-    "failed_requests": 0,
-    "global_model_version": "v1.0.0",
+    "client_accuracies": [],  # Per-client accuracy each round
+    "connected_clients": {},
+    "total_registered_users": 0,
+    "online_users_count": 0,
+    "global_model_version": "v0.0.0",
     "last_updated": "Never",
-    "fairness_metrics": []   # Track client-wise gaps
+    "training_sessions": [],
+    "fairness_metrics": [],
 }
 
+TIMEOUT_SECONDS = 120  # Wait for partial aggregation
+
 def add_log(msg: str):
-    print(msg)
     timestamp = datetime.now().strftime("%H:%M:%S")
-    system_status["logs"].insert(0, f"[{timestamp}] {msg}")
-    if len(system_status["logs"]) > 50:
+    entry = f"[{timestamp}] {msg}"
+    print(entry)
+    system_status["logs"].insert(0, entry)
+    if len(system_status["logs"]) > 100:
         system_status["logs"].pop()
 
-EXPECTED_CLIENTS = 2  
-TIMEOUT_SECONDS = 60
-last_update_time = time.time()
-
+# ── Database Init ─────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(timeout_watcher())
+    try:
+        init_db()
+        add_log("✅ PostgreSQL database connected and tables verified.")
+    except Exception as e:
+        add_log(f"⚠️ Database connection failed: {str(e)}. Running in memory-only mode.")
+    asyncio.create_task(heartbeat_monitor())
 
-async def timeout_watcher():
-    global last_update_time
+async def heartbeat_monitor():
+    """Monitor online users and trigger partial aggregation on timeout."""
     while True:
         await asyncio.sleep(5)
-        # Check active clients heartbeat timeout (mark offline if > 120s since last update and not idle)
         current_time = time.time()
-        for cid, info in system_status["connected_clients"].items():
-            if info["status"] == "🟢 Active" and (current_time - info["timestamp"]) > 120:
-                system_status["connected_clients"][cid]["status"] = "🔴 Disconnected"
-                
-        # Handle Partial Aggregation
-        if len(client_updates) > 0 and len(client_updates) < EXPECTED_CLIENTS:
-            if current_time - last_update_time > TIMEOUT_SECONDS:
-                add_log(f"⚠️ FAULT TOLERANCE TRIGGERED: Timeout reached ({TIMEOUT_SECONDS}s). Proceeding with PARTIAL Aggregation of {len(client_updates)} clients.")
-                execute_aggregation()
-                last_update_time = time.time()
+        
+        # Update online user count
+        for uid in list(online_users.keys()):
+            if current_time - online_users[uid] > 60:
+                del online_users[uid]
+                if uid in connected_users:
+                    connected_users[uid]["status"] = "🔴 Offline"
+        
+        system_status["online_users_count"] = len(online_users)
+        
+        # Partial aggregation trigger
+        if len(client_updates) > 0 and (current_time - getattr(heartbeat_monitor, 'last_update_time', current_time)) > TIMEOUT_SECONDS:
+            add_log(f"⚠️ Timeout reached. Proceeding with partial aggregation ({len(client_updates)} clients).")
+            execute_federated_aggregation()
 
+heartbeat_monitor.last_update_time = time.time()
+
+# ── Auth Helpers ──────────────────────────────────────────────────────────────
+def create_jwt_token(user_id: int, username: str) -> str:
+    payload = {
+        "user_id": user_id,
+        "username": username,
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_jwt_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+def get_current_user(request: Request) -> dict:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    token = auth_header.split(" ")[1]
+    return decode_jwt_token(token)
+
+# ── Auth Endpoints ────────────────────────────────────────────────────────────
+@app.post("/auth/register")
+async def register(request: Request):
+    body = await request.json()
+    username = body.get("username", "").strip()
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "")
+    
+    if not username or not email or not password:
+        raise HTTPException(status_code=400, detail="All fields are required")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    
+    try:
+        user = create_user(username, email, password_hash)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    
+    if user is None:
+        raise HTTPException(status_code=409, detail="Username or email already exists")
+    
+    token = create_jwt_token(user["id"], user["username"])
+    add_log(f"👤 New user registered: {username}")
+    
+    try:
+        system_status["total_registered_users"] = get_all_users_count()
+    except:
+        pass
+    
+    return {
+        "token": token,
+        "user": {"id": user["id"], "username": user["username"], "email": user["email"]}
+    }
+
+@app.post("/auth/login")
+async def login(request: Request):
+    body = await request.json()
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "")
+    
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    
+    try:
+        user = get_user_by_email(email)
+    except Exception:
+        user = None
+    
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    if not bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    try:
+        update_last_login(user["id"])
+    except:
+        pass
+    
+    token = create_jwt_token(user["id"], user["username"])
+    add_log(f"🔐 User logged in: {user['username']}")
+    
+    return {
+        "token": token,
+        "user": {"id": user["id"], "username": user["username"], "email": user["email"]}
+    }
+
+@app.get("/auth/me")
+async def get_me(request: Request):
+    payload = get_current_user(request)
+    try:
+        user = get_user_by_id(payload["user_id"])
+    except:
+        user = {"id": payload["user_id"], "username": payload["username"]}
+    return {"user": user}
+
+# ── Heartbeat (keeps user as "online") ────────────────────────────────────────
+@app.post("/heartbeat")
+async def heartbeat(request: Request):
+    payload = get_current_user(request)
+    uid = str(payload["user_id"])
+    username = payload["username"]
+    
+    client_status = "Online"
+    try:
+        body = await request.json()
+        client_status = body.get("client_status", "Online")
+    except:
+        pass
+    
+    online_users[uid] = time.time()
+    connected_users[uid] = {
+        "username": username,
+        "status": f"🟢 {client_status}",
+        "last_seen": datetime.now().strftime("%H:%M:%S"),
+    }
+    system_status["connected_clients"] = connected_users
+    system_status["online_users_count"] = len(online_users)
+    
+    return {"status": "ok"}
+
+# ── Server Status Endpoint ────────────────────────────────────────────────────
 @app.get("/status")
 def get_status():
-    system_status["failed_requests"] = failed_auth_attempts
+    try:
+        system_status["total_registered_users"] = get_all_users_count()
+    except:
+        pass
+    system_status["online_users_count"] = len(online_users)
     return system_status
 
-@app.get("/model/{width_scale}")
-def get_model(width_scale: float, token: HTTPAuthorizationCredentials = Depends(verify_token), client_id: str = "Unknown"):
-    sub_state = extract_submodel_weights(global_state, width_scale)
-    buffer = io.BytesIO()
-    torch.save(sub_state, buffer)
+# ── Client Model Update Submission ────────────────────────────────────────────
+@app.post("/submit-update")
+async def submit_model_update(request: Request):
+    """
+    Client sends trained model weights + metrics after local training.
+    Body (JSON):
+      - model_weights: base64 or serialized state_dict
+      - accuracy: float
+      - loss: float
+      - input_features: int
+      - num_classes: int
+      - dataset_name: str
+      - num_samples: int
+    """
+    global global_model_config
     
-    # Mark client as active on pull
-    system_status["connected_clients"][client_id] = {
-        "status": "🟢 Active",
-        "last_update": datetime.now().strftime("%H:%M:%S"),
-        "timestamp": time.time()
-    }
+    payload = get_current_user(request)
+    uid = str(payload["user_id"])
+    username = payload["username"]
     
-    return buffer.getvalue()
-
-@app.post("/update")
-async def receive_update(
-    client_id: int = Form(...),
-    loss: float = Form(...),
-    width_scale: float = Form(...),
-    distribution: str = Form("Unknown"),
-    payload: bytes = File(...),
-    token: HTTPAuthorizationCredentials = Depends(verify_token)
-):
-    global last_update_time
-    update_data = pickle.loads(payload)
+    body = await request.json()
+    accuracy = body.get("accuracy", 0)
+    loss = body.get("loss", 0)
+    input_features = body.get("input_features", 0)
+    num_classes = body.get("num_classes", 0)
+    dataset_name = body.get("dataset_name", "Unknown")
+    num_samples = body.get("num_samples", 0)
+    weights_serialized = body.get("model_weights", None)  # List of layer weight arrays
     
-    client_metrics.append({
-        "client_id": client_id,
+    if weights_serialized is None:
+        raise HTTPException(status_code=400, detail="model_weights is required")
+    
+    # Store or validate model config
+    model_config = {"input_features": input_features, "num_classes": num_classes}
+    
+    if global_model_config is None:
+        global_model_config = model_config
+    elif global_model_config["input_features"] != input_features or global_model_config["num_classes"] != num_classes:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Model config mismatch. Server expects {global_model_config['input_features']} features and {global_model_config['num_classes']} classes. Got {input_features} features and {num_classes} classes."
+        )
+    
+    # Deserialize weights
+    weight_tensors = {}
+    for key, val in weights_serialized.items():
+        weight_tensors[key] = torch.tensor(val, dtype=torch.float32)
+    
+    client_updates.append({
+        "user_id": uid,
+        "username": username,
+        "weights": weight_tensors,
+        "accuracy": accuracy,
         "loss": loss,
-        "width_scale": width_scale,
-        "distribution": distribution
     })
     
-    client_updates.append(update_data)
+    client_metrics.append({
+        "user_id": uid,
+        "username": username,
+        "accuracy": accuracy,
+        "loss": loss,
+        "dataset_name": dataset_name,
+        "num_samples": num_samples,
+        "input_features": input_features,
+        "num_classes": num_classes,
+    })
     
-    # Update active client monitor tab
-    system_status["connected_clients"][str(client_id)] = {
-        "status": "🟢 Active (Update Received)",
-        "last_update": datetime.now().strftime("%H:%M:%S"),
-        "timestamp": time.time()
+    # Update connected client info
+    connected_users[uid] = {
+        "username": username,
+        "status": f"🟢 Trained (Acc: {accuracy:.1f}%)",
+        "last_seen": datetime.now().strftime("%H:%M:%S"),
     }
+    system_status["connected_clients"] = connected_users
     
-    if len(client_updates) == 1:
-        last_update_time = time.time() 
-        system_status["status"] = "Receiving Updates..."
-        
-    add_log(f"Hospital {client_id} pushed secured footprint. Dist: [{distribution}]")
+    # Save to DB
+    try:
+        save_training_session(
+            user_id=int(uid),
+            dataset_name=dataset_name,
+            num_features=input_features,
+            num_samples=num_samples,
+            accuracy=accuracy,
+            loss=loss,
+            training_round=system_status["round"] + 1
+        )
+    except Exception as e:
+        add_log(f"⚠️ Failed to save session to DB: {str(e)}")
     
-    if len(client_updates) >= EXPECTED_CLIENTS:
-        add_log(f"Received expected batch from all {EXPECTED_CLIENTS} laptops. Triggering Global Aggregation...")
-        execute_aggregation()
-        
-    return {"message": "Update securely accepted by Root Server"}
+    add_log(f"📦 Update received from {username} | Accuracy: {accuracy:.2f}% | Loss: {loss:.4f} | Dataset: {dataset_name}")
+    
+    heartbeat_monitor.last_update_time = time.time()
+    
+    # Check if we should aggregate
+    num_updates = len(client_updates)
+    
+    if num_updates == 1:
+        # Single client: use their model directly
+        add_log(f"⚡ Single client update from {username}. Model stored as global model.")
+        execute_federated_aggregation()
+    elif num_updates >= 2:
+        # Multiple clients: trigger FedAvg
+        add_log(f"🔄 {num_updates} client updates received. Triggering Federated Averaging...")
+        execute_federated_aggregation()
+    else:
+        system_status["status"] = f"Waiting for more clients... ({num_updates} received)"
+    
+    return {
+        "message": "Update accepted",
+        "current_updates": num_updates,
+        "round": system_status["round"]
+    }
 
-def execute_aggregation():
-    global global_state, client_updates, client_metrics
+# ── Federated Averaging Aggregation ───────────────────────────────────────────
+def execute_federated_aggregation():
+    """
+    FedAvg: Average the model weights from all participating clients.
+    - 1 client: use model directly
+    - 2+ clients: average weights (Federated Learning)
+    """
+    global global_model_weights, client_updates, client_metrics
     
     if len(client_updates) == 0:
         return
-        
-    add_log(f"Initializing Multi-Party Federated Averaging for V{system_status['round']+1}.0...")
     
+    num_clients = len(client_updates)
+    round_num = system_status["round"] + 1
+    
+    add_log(f"═══ ROUND {round_num} AGGREGATION ═══")
+    add_log(f"Participants: {num_clients} client(s)")
+    
+    # Collect metrics
+    accuracies = [m["accuracy"] for m in client_metrics]
     losses = [m["loss"] for m in client_metrics]
+    avg_accuracy = sum(accuracies) / len(accuracies)
     avg_loss = sum(losses) / len(losses)
-    system_status["loss_history"].append(avg_loss)
     
-    estimated_acc = max(0, 100 - (avg_loss * 50))
-    system_status["accuracy_history"].append(estimated_acc)
-    
-    # Fairness Stats
-    fairness_report = []
+    # Per-client accuracy report
+    client_acc_report = []
     for m in client_metrics:
-        cl_acc = max(0, 100 - (m["loss"] * 50))
-        fairness_report.append(f"Client {m['client_id']}: {cl_acc:.1f}%")
-        
-    system_status["fairness_metrics"].append(fairness_report)
+        client_acc_report.append(f"{m['username']}: {m['accuracy']:.1f}%")
     
-    dist_report = [f"Client {m['client_id']}: {m['distribution']}" for m in client_metrics]
-    system_status["distributions"].append(dist_report)
-    
-    q = 1.0  
-    weights = []
-    for l in losses:
-        w_fair = 1.0 + q * (l - avg_loss)
-        weights.append(max(0.1, w_fair))
+    if num_clients == 1:
+        # Single client: just use their weights
+        add_log("📌 Single participant mode — using client model directly.")
+        global_model_weights = client_updates[0]["weights"]
+    else:
+        # FedAvg: Average all the weights
+        add_log(f"🤝 Federated Averaging with {num_clients} participants...")
         
-    total_w = sum(weights)
-    weights = [w / total_w for w in weights]
-    
-    add_log(f"q-FedAvg Gaps Indexed: {['%.3f'%w for w in weights]}")
-    
-    new_global_state = {k: torch.zeros_like(v) for k, v in global_state.items()}
-    weight_sum_counts = {k: torch.zeros_like(v) for k, v in global_state.items()}
-    
-    for i, u_data in enumerate(client_updates):
-        w = weights[i]
+        # Initialize aggregated weights as zeros
+        first_weights = client_updates[0]["weights"]
+        aggregated = {}
+        for key in first_weights.keys():
+            aggregated[key] = torch.zeros_like(first_weights[key], dtype=torch.float32)
         
-        pt_state = u_data["plaintext"]
-        padded_pt = insert_submodel_weights(global_state, pt_state)
+        # Sum all weights
+        for update in client_updates:
+            for key in aggregated.keys():
+                aggregated[key] += update["weights"][key]
         
-        for k in pt_state.keys():
-            mask = padded_pt[k] != 0
-            new_global_state[k][mask] += (padded_pt[k][mask] * w)
-            weight_sum_counts[k][mask] += w
-            
-        enc_fc_weight = u_data["encrypted_fc2_weight"]
-        enc_fc_bias = u_data["encrypted_fc2_bias"]
+        # Divide by number of clients (averaging)
+        for key in aggregated.keys():
+            aggregated[key] /= num_clients
         
-        dec_fc_w = decrypt_and_decode(context, enc_fc_weight, global_state['fc2.weight'].shape) * w
-        dec_fc_b = decrypt_and_decode(context, enc_fc_bias, global_state['fc2.bias'].shape) * w
-        
-        new_global_state['fc2.weight'] += dec_fc_w
-        new_global_state['fc2.bias'] += dec_fc_b
-        
-    for k in new_global_state.keys():
-        if 'fc2' not in k:
-            mask = weight_sum_counts[k] > 0
-            new_global_state[k][mask] /= weight_sum_counts[k][mask]
-            
-    for k in global_state.keys():
-        if 'fc2' not in k:
-            mask = weight_sum_counts[k] == 0
-            new_global_state[k][mask] = global_state[k][mask]
-            
-    global_state = new_global_state
+        global_model_weights = aggregated
+        add_log(f"✅ FedAvg completed. Averaged {len(aggregated)} parameter tensors across {num_clients} clients.")
     
-    add_log("Global Weights aggregated inside isolated trusted enclave.")
-    
-    system_status["metrics"].append(client_metrics.copy())
-    system_status["round"] += 1
-    system_status["global_model_version"] = f"v{system_status['round']}.0.0"
+    # Update system status
+    system_status["accuracy_history"].append(avg_accuracy)
+    system_status["loss_history"].append(avg_loss)
+    system_status["client_accuracies"].append(client_acc_report)
+    system_status["fairness_metrics"].append(client_acc_report)
+    system_status["round"] = round_num
+    system_status["global_model_version"] = f"v{round_num}.0.0"
     system_status["last_updated"] = datetime.now().strftime("%H:%M:%S")
+    system_status["status"] = "Idle — Ready for next round"
     
-    avg_acc = sum([max(0, 100 - (m["loss"] * 50)) for m in client_metrics]) / len(client_metrics)
-    if avg_acc > 90.0:
-        system_status["status"] = "Converged (Target Exceeded: 90%)"
-        add_log("Convergence Triggered (Accuracy > 90%). System Paused.")
-    else:
-        system_status["status"] = "Idle - Waiting for Next Round Batch"
+    add_log(f"📊 Round {round_num} Avg Accuracy: {avg_accuracy:.2f}% | Avg Loss: {avg_loss:.4f}")
     
+    # Save to DB
+    try:
+        save_federated_round(round_num, num_clients, avg_accuracy, avg_loss)
+    except Exception as e:
+        add_log(f"⚠️ Failed to save round to DB: {str(e)}")
+    
+    # Clear for next round
     client_updates.clear()
     client_metrics.clear()
 
-# Ensure frontend fallback serving at the very end
-import os
-frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
-if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-
+# ── Get Global Model (for prediction) ─────────────────────────────────────────
+@app.get("/global-model")
+async def get_global_model(request: Request):
+    """Returns the current global model weights and config for client prediction."""
+    get_current_user(request)  # Verify auth
     
-    add_log("Global Model successfully updated inside memory using Privacy-Preserving routines.")
+    if global_model_weights is None or global_model_config is None:
+        raise HTTPException(status_code=404, detail="No global model available yet. Train at least one round first.")
     
-    system_status["metrics"].append(client_metrics.copy())
-    system_status["round"] += 1
-    
-    # Convergence Check
-    avg_acc = sum([m["accuracy"] if "accuracy" in m else 0 for m in client_metrics]) / len(client_metrics) if client_metrics else 0
-    if avg_acc > 0.90:
-        system_status["status"] = "Converged (Accuracy Achieved!) Final Model Ready."
-        add_log("Convergence Reached (Accuracy > 90%). Final Model ready for deployment.")
-    else:
-        system_status["status"] = "Idle - Waiting for next round updates..."
-    
-    client_updates.clear()
-    client_metrics.clear()
-
-@app.post("/predict")
-async def predict_xray(file: UploadFile = File(...)):
-    if system_status["round"] == 0:
-        return JSONResponse(status_code=400, content={"error": "The Federated Model hasn't finished Round 1 training yet!"})
-        
-    import io
-    image_bytes = await file.read()
-    image = Image.open(io.BytesIO(image_bytes)).convert('L')
-    
-    transform = transforms.Compose([
-        transforms.Resize((128, 128)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-    ])
-    
-    input_tensor = transform(image).unsqueeze(0)
-    
-    global_model.load_state_dict(global_state)
-    global_model.eval()
-    
-    with torch.no_grad():
-        output = global_model(input_tensor)
-        prob = torch.nn.functional.softmax(output[0], dim=0)
-        
-    classes = ["Normal", "Pneumonia", "COVID-19"]
-    pred_idx = torch.argmax(prob).item()
+    # Serialize weights to lists for JSON transport
+    serialized = {}
+    for key, tensor in global_model_weights.items():
+        serialized[key] = tensor.tolist()
     
     return {
-        "prediction": classes[pred_idx],
-        "confidence": prob[pred_idx].item() * 100
+        "model_weights": serialized,
+        "model_config": global_model_config,
+        "round": system_status["round"],
+        "accuracy": system_status["accuracy_history"][-1] if system_status["accuracy_history"] else 0,
     }
 
-# Ensure frontend fallback serving at the very end
-import os
+# ── Recent Sessions for Dashboard ─────────────────────────────────────────────
+@app.get("/admin/sessions")
+async def get_sessions():
+    try:
+        sessions = get_recent_sessions(20)
+        # Ensure created_at is a string
+        for s in sessions:
+            if "created_at" in s and s["created_at"] and not isinstance(s["created_at"], str):
+                s["created_at"] = str(s["created_at"])
+        return sessions
+    except Exception as e:
+        print(f"Sessions fetch error: {e}")
+        return []
+
+# ── Serve Frontend ─────────────────────────────────────────────────────────────
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
 if os.path.exists(frontend_path):
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")

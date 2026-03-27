@@ -58,6 +58,7 @@ local_scaler = None
 local_label_encoder = None
 local_feature_columns = None
 local_model_config = None
+local_feature_encoders = None
 uploaded_dataset = None  # Stores the raw DataFrame
 
 
@@ -115,7 +116,7 @@ async def train_model(request: Request):
     Train a model locally on the uploaded dataset.
     Body: { server_url, target_column, token, epochs (optional) }
     """
-    global local_model, local_scaler, local_label_encoder, local_feature_columns, local_model_config
+    global local_model, local_scaler, local_label_encoder, local_feature_columns, local_model_config, local_feature_encoders
     
     if uploaded_dataset is None:
         raise HTTPException(status_code=400, detail="No dataset uploaded yet. Upload a dataset first.")
@@ -146,10 +147,12 @@ async def train_model(request: Request):
         y = df[target_column].copy()
         
         # Handle categorical features
+        feature_encoders = {}
         for col in X.columns:
             if X[col].dtype == 'object' or X[col].dtype.name == 'category':
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
+                feature_encoders[col] = le
         
         # Handle missing values
         X = X.fillna(X.median(numeric_only=True))
@@ -232,6 +235,7 @@ async def train_model(request: Request):
         local_label_encoder = label_encoder
         local_feature_columns = feature_cols
         local_model_config = {"input_features": input_features, "num_classes": num_classes}
+        local_feature_encoders = feature_encoders
         
         # Serialize model weights for sending to server
         model_weights = {}
@@ -297,7 +301,7 @@ async def predict(request: Request):
     Can use either the local model or pull the federated global model.
     Body: { input_data: {col1: val1, col2: val2, ...}, use_global: bool, server_url: str, token: str }
     """
-    global local_model, local_scaler, local_label_encoder, local_feature_columns, local_model_config
+    global local_model, local_scaler, local_label_encoder, local_feature_columns, local_model_config, local_feature_encoders
     
     body = await request.json()
     input_data = body.get("input_data", {})
@@ -352,9 +356,13 @@ async def predict(request: Request):
         
         input_df = input_df[local_feature_columns]
         
-        # Handle categorical
+        # Handle categorical using saved encoders
         for col in input_df.columns:
-            if input_df[col].dtype == 'object':
+            if local_feature_encoders and col in local_feature_encoders:
+                le = local_feature_encoders[col]
+                known_classes = set(le.classes_)
+                input_df[col] = input_df[col].apply(lambda x: le.transform([str(x)])[0] if str(x) in known_classes else 0)
+            elif input_df[col].dtype == 'object':
                 try:
                     input_df[col] = pd.to_numeric(input_df[col])
                 except:

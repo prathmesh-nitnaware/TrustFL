@@ -2,8 +2,8 @@
    TrustFL Client — Application Logic
    ═══════════════════════════════════════════════════════ */
 
-const CLIENT_API = "http://localhost:8001";
-const SERVER_API_DEFAULT = "http://localhost:8000";
+const CLIENT_API = window.location.origin;
+const SERVER_API_DEFAULT = "http://localhost:8000"; // Fallback only
 
 // ── State ────────────────────────────────────────────────────────────────────
 let authToken = localStorage.getItem("trustfl_token") || null;
@@ -15,6 +15,13 @@ let pollInterval = null;
 
 // ── DOM Ready ────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
+    const savedUrl = localStorage.getItem("trustfl_server_url");
+    if (savedUrl) {
+        if (document.getElementById("loginServerUrl")) document.getElementById("loginServerUrl").value = savedUrl;
+        if (document.getElementById("signupServerUrl")) document.getElementById("signupServerUrl").value = savedUrl;
+        if (document.getElementById("serverUrl")) document.getElementById("serverUrl").value = savedUrl;
+    }
+
     if (authToken && currentUser) {
         showDashboard();
     }
@@ -43,12 +50,13 @@ function getServerUrl() {
 }
 
 async function handleLogin() {
+    const serverUrl = document.getElementById("loginServerUrl").value.trim() || SERVER_API_DEFAULT;
     const email = document.getElementById("loginEmail").value.trim();
     const password = document.getElementById("loginPassword").value;
     const errEl = document.getElementById("authError");
     const btn = document.getElementById("loginBtn");
     
-    if (!email || !password) {
+    if (!email || !password || !serverUrl) {
         errEl.textContent = "Please fill in all fields.";
         return;
     }
@@ -58,7 +66,7 @@ async function handleLogin() {
     errEl.textContent = "";
     
     try {
-        const resp = await fetch(`${SERVER_API_DEFAULT}/auth/login`, {
+        const resp = await fetch(`${serverUrl}/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, password }),
@@ -77,6 +85,8 @@ async function handleLogin() {
         currentUser = data.user;
         localStorage.setItem("trustfl_token", authToken);
         localStorage.setItem("trustfl_user", JSON.stringify(currentUser));
+        localStorage.setItem("trustfl_server_url", serverUrl);
+        if (document.getElementById("serverUrl")) document.getElementById("serverUrl").value = serverUrl;
         
         showDashboard();
     } catch (err) {
@@ -87,13 +97,14 @@ async function handleLogin() {
 }
 
 async function handleSignup() {
+    const serverUrl = document.getElementById("signupServerUrl").value.trim() || SERVER_API_DEFAULT;
     const username = document.getElementById("signupUsername").value.trim();
     const email = document.getElementById("signupEmail").value.trim();
     const password = document.getElementById("signupPassword").value;
     const errEl = document.getElementById("authError");
     const btn = document.getElementById("signupBtn");
     
-    if (!username || !email || !password) {
+    if (!username || !email || !password || !serverUrl) {
         errEl.textContent = "Please fill in all fields.";
         return;
     }
@@ -108,7 +119,7 @@ async function handleSignup() {
     errEl.textContent = "";
     
     try {
-        const resp = await fetch(`${SERVER_API_DEFAULT}/auth/register`, {
+        const resp = await fetch(`${serverUrl}/auth/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, email, password }),
@@ -127,6 +138,8 @@ async function handleSignup() {
         currentUser = data.user;
         localStorage.setItem("trustfl_token", authToken);
         localStorage.setItem("trustfl_user", JSON.stringify(currentUser));
+        localStorage.setItem("trustfl_server_url", serverUrl);
+        if (document.getElementById("serverUrl")) document.getElementById("serverUrl").value = serverUrl;
         
         showDashboard();
     } catch (err) {

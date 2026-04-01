@@ -1,0 +1,317 @@
+/* ═══════════════════════════════════════════════════════
+   TrustFL Client Dashboard — Clean Modern Flat UI
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #f1f5f9;
+    --bg-card: #ffffff;
+    --bg-input: #ffffff;
+    --border: #e2e8f0;
+    --border-active: #0d9488;
+    --accent: #0d9488;
+    --accent-dim: #ccfbf1;
+    --success: #16a34a;
+    --success-dim: #dcfce7;
+    --warning: #f59e0b;
+    --error: #dc2626;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --radius: 12px;
+    --radius-sm: 6px;
+    --transition: all 0.2s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+/* ═══ AUTH SCREEN ═══ */
+.auth-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+}
+
+.auth-container {
+    width: 440px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 48px;
+}
+
+.logo-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin: 0 auto 24px;
+}
+
+.auth-header h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+
+.auth-subtitle {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 32px;
+}
+
+.input-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 16px;
+}
+
+.input-field input {
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+}
+
+.auth-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+}
+
+/* ═══ DASHBOARD ═══ */
+.dashboard {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 24px 32px 100px;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 24px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 32px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo-mark {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.header-title { font-size: 20px; font-weight: 800; }
+.header-sub { font-size: 12px; color: var(--text-secondary); }
+
+.connection-badge {
+    padding: 6px 16px;
+    border-radius: 4px;
+    background: #fef2f2;
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid #fee2e2;
+}
+
+.connection-badge.connected {
+    background: #f0fdf4;
+    color: #16a34a;
+    border-color: #dcfce7;
+}
+
+/* Main Grid */
+.main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 28px;
+}
+
+.card-header h2 {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.step-badge {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+/* Form */
+.input-group label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    margin-top: 16px;
+}
+
+.input-group input, .input-group select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+}
+
+.action-btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 4px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 24px;
+    color: white;
+}
+
+.train-btn { background: var(--accent); }
+.predict-btn { background: var(--success); }
+
+.action-btn:disabled { background: var(--border); cursor: not-allowed; }
+
+/* Progress */
+.progress-bar {
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 16px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+}
+
+/* Results */
+.result-panel {
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.result-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    text-align: center;
+}
+
+.result-value { font-size: 20px; font-weight: 800; color: var(--accent); }
+
+/* Prediction Result */
+.prediction-result {
+    margin-top: 24px;
+    padding: 24px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.prediction-value {
+    font-size: 32px;
+    font-weight: 900;
+    color: var(--accent);
+    margin-bottom: 8px;
+}
+
+/* Status Bar */
+.status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 2px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.status-dot.active { background: var(--success); }
+.status-dot.training { background: var(--accent); }
+
+/* XAI Bars */
+.xai-list-bar-bg {
+    height: 6px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+    margin-bottom: 12px;
+}
+
+.xai-list-bar-fill {
+    height: 100%;
+    background: var(--accent);
+}

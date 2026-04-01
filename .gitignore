@@ -1,0 +1,4 @@
+client-dashboard/node_modules
+client/__pycache__
+core/__pycache__
+server/__pycache__

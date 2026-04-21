@@ -47,8 +47,31 @@ _db = {
     "next_round_id": 1
 }
 
+DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "trustfl_db.json"))
+
+def save_db():
+    """Persist the current state of _db to a JSON file."""
+    try:
+        with open(DB_FILE, "w") as f:
+            json.dump(_db, f, indent=4)
+    except Exception as e:
+        print(f"❌ Error saving database: {e}")
+
+def load_db():
+    """Load the state of _db from a JSON file if it exists."""
+    global _db
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r") as f:
+                data = json.load(f)
+                _db.update(data)
+            print(f"✅ Loaded database from {DB_FILE} ({len(_db['users'])} users found)")
+        except Exception as e:
+            print(f"❌ Error loading database: {e}")
+
 def init_db():
-    print("✅ In-memory database initialized.")
+    load_db()
+    print("✅ Database system initialized.")
 
 def create_user(username: str, email: str, password_hash: str):
     for u in _db["users"]:
@@ -66,6 +89,7 @@ def create_user(username: str, email: str, password_hash: str):
     }
     _db["users"].append(user)
     _db["next_user_id"] += 1
+    save_db()
     return user
 
 def get_user_by_email(email: str):
@@ -84,6 +108,7 @@ def update_last_login(user_id: int):
     for u in _db["users"]:
         if u["id"] == user_id:
             u["last_login"] = datetime.now().isoformat()
+            save_db()
             break
 
 def save_training_session(user_id: int, dataset_name: str, num_features: int, num_samples: int, accuracy: float, loss: float, training_round: int):
@@ -106,6 +131,7 @@ def save_training_session(user_id: int, dataset_name: str, num_features: int, nu
     }
     _db["training_sessions"].append(session)
     _db["next_session_id"] += 1
+    save_db()
 
 def save_federated_round(round_number: int, num_participants: int, avg_accuracy: float, avg_loss: float):
     fedround = {
@@ -119,6 +145,7 @@ def save_federated_round(round_number: int, num_participants: int, avg_accuracy:
     }
     _db["federated_rounds"].append(fedround)
     _db["next_round_id"] += 1
+    save_db()
 
 def get_all_users_count():
     return len(_db["users"])
@@ -173,7 +200,7 @@ def add_log(msg: str):
 async def startup_event():
     try:
         init_db()
-        add_log("✅ Server started in in-memory mode (database removed).")
+        add_log("✅ Server started with persistent database.")
     except Exception as e:
         add_log(f"⚠️ Database connection failed: {str(e)}. Running in memory-only mode.")
     asyncio.create_task(heartbeat_monitor())

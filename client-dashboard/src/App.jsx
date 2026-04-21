@@ -79,7 +79,11 @@ function App() {
       setToken(data.token);
       setAuthError('');
     } catch (err) {
-      setAuthError('Login failed. Check credentials.');
+      if (err.response?.status === 401) {
+        setAuthError('Unauthorized: Identity not found. The server may have restarted (wiping memory). Please Register again.');
+      } else {
+        setAuthError('Login failed. Check server connection.');
+      }
     }
   };
 

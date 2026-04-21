@@ -75,7 +75,11 @@ async function handleLogin() {
         const data = await resp.json();
         
         if (!resp.ok) {
-            errEl.textContent = data.detail || "Login failed.";
+            if (resp.status === 401) {
+                errEl.textContent = "Unauthorized: Identity not found. Server may have restarted. Please Register again.";
+            } else {
+                errEl.textContent = data.detail || "Login failed.";
+            }
             btn.disabled = false;
             btn.innerHTML = '<span>Sign In</span><i class="fa-solid fa-arrow-right"></i>';
             return;

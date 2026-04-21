@@ -25,6 +25,11 @@ from pydantic import BaseModel
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
+import shap
+import lime
+import lime.lime_tabular
+import warnings
+warnings.filterwarnings("ignore")
 
 app = FastAPI(title="TrustFL Client Node")
 
@@ -59,6 +64,63 @@ def get_local_xai(model, input_tensor, feature_names):
     explanation.sort(key=lambda x: x["score"], reverse=True)
     return explanation
 
+def get_shap_explanation(model, input_tensor, background_data, feature_names):
+    """Generate SHAP explanations for the model prediction."""
+    try:
+        # Use DeepExplainer for PyTorch
+        explainer = shap.DeepExplainer(model, torch.tensor(background_data[:50], dtype=torch.float32))
+        shap_values = explainer.shap_values(input_tensor)
+        
+        # Determine the predicted class
+        with torch.no_grad():
+            output = model(input_tensor)
+            pred_class = torch.argmax(output).item()
+        
+        # shap_values is a list of arrays if multi-class, or one array if binary (sometimes)
+        # DeepExplainer returns a list of arrays for PyTorch
+        if isinstance(shap_values, list):
+            class_shap = shap_values[pred_class][0]
+        else:
+            class_shap = shap_values[0] if len(shap_values.shape) > 2 else shap_values[0]
+
+        explanation = []
+        for i, val in enumerate(class_shap):
+            explanation.append({"feature": feature_names[i], "score": float(val)})
+            
+        explanation.sort(key=lambda x: abs(x["score"]), reverse=True)
+        return explanation
+    except Exception as e:
+        print(f"SHAP Error: {str(e)}")
+        return []
+
+def get_lime_explanation(model, input_scaled, background_data, feature_names, class_names):
+    """Generate LIME explanations for the model prediction."""
+    try:
+        explainer = lime.lime_tabular.LimeTabularExplainer(
+            background_data,
+            feature_names=feature_names,
+            class_names=[str(c) for c in class_names],
+            mode='classification'
+        )
+        
+        def predict_fn(x):
+            t = torch.tensor(x, dtype=torch.float32)
+            with torch.no_grad():
+                logits = model(t)
+                probs = torch.nn.functional.softmax(logits, dim=1)
+            return probs.numpy()
+        
+        # input_scaled should be 1D for lime explain_instance
+        exp = explainer.explain_instance(input_scaled.flatten(), predict_fn, num_features=len(feature_names))
+        
+        explanation = []
+        for desc, weight in exp.as_list():
+            explanation.append({"feature": desc, "score": float(weight)})
+        return explanation
+    except Exception as e:
+        print(f"LIME Error: {str(e)}")
+        return []
+
 # ── Client State ──────────────────────────────────────────────────────────────
 client_state = {
     "status": "idle",
@@ -81,6 +143,7 @@ local_feature_columns = None
 local_model_config = None
 local_feature_encoders = None
 uploaded_dataset = None  # Stores the raw DataFrame
+training_background = None # Sample of training data for SHAP/LIME
 
 
 # ── Dataset Upload ────────────────────────────────────────────────────────────
@@ -257,6 +320,7 @@ async def train_model(request: Request):
         local_feature_columns = feature_cols
         local_model_config = {"input_features": input_features, "num_classes": num_classes}
         local_feature_encoders = feature_encoders
+        training_background = X_train # Store for XAI
         
         # Serialize model weights for sending to server
         model_weights = {}
@@ -406,17 +470,25 @@ async def predict(request: Request):
         for idx, class_name in enumerate(local_label_encoder.classes_):
             all_probs[str(class_name)] = round(probs[idx].item() * 100, 2)
         
-        # Generate XAI explanation for local prediction
-        explanation = []
+        # Generate explanations
+        saliency_exp = []
+        shap_exp = []
+        lime_exp = []
+        
         if not use_global:
-            explanation = get_local_xai(model_to_use, input_tensor, local_feature_columns)
+            saliency_exp = get_local_xai(model_to_use, input_tensor, local_feature_columns)
+            if training_background is not None:
+                shap_exp = get_shap_explanation(model_to_use, input_tensor, training_background, local_feature_columns)
+                lime_exp = get_lime_explanation(model_to_use, input_scaled, training_background, local_feature_columns, local_label_encoder.classes_)
         
         return {
             "prediction": str(prediction),
             "confidence": round(confidence, 2),
             "probabilities": all_probs,
             "model_source": "global (federated)" if use_global else "local",
-            "explanation": explanation
+            "explanation": saliency_exp, # Keep original key for compatibility
+            "shap_explanation": shap_exp,
+            "lime_explanation": lime_exp
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")

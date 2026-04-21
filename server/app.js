@@ -379,6 +379,11 @@ document.getElementById('serverPredictBtn')?.addEventListener('click', async () 
             document.getElementById('testValue').textContent = data.prediction === 1 ? 'Disease Detected' : 'Normal';
             document.getElementById('testConf').textContent = data.confidence.toFixed(1) + '%';
             document.getElementById('testMeanAcc').textContent = data.federated_metrics.global_mean_accuracy.toFixed(2) + '%';
+            
+            // Render XAI
+            renderServerXai('serverXaiSaliency', 'Saliency Map', data.explanation);
+            renderServerXai('serverXaiShap', 'SHAP Explanation', data.shap_explanation);
+            renderServerXai('serverXaiLime', 'LIME Explanation', data.lime_explanation);
         }
     } catch (err) {
         console.error(err);
@@ -387,6 +392,33 @@ document.getElementById('serverPredictBtn')?.addEventListener('click', async () 
         btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Run Inference';
     }
 });
+
+function renderServerXai(containerId, title, list) {
+    const container = document.getElementById(containerId);
+    if (!container || !list || list.length === 0) {
+        if (container) container.innerHTML = '';
+        return;
+    }
+    
+    container.innerHTML = `<div style="font-size:0.65rem; text-transform:uppercase; color:var(--text-muted); margin-bottom:5px;">${title}</div>`;
+    list.slice(0, 4).forEach(item => {
+        const absScore = Math.abs(item.score);
+        const pct = (absScore * 100).toFixed(1);
+        const color = item.score >= 0 ? "var(--accent)" : "#ef4444";
+        
+        container.innerHTML += `
+            <div style="margin-bottom:6px;">
+                <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:var(--text-secondary);">
+                    <span>${item.feature}</span>
+                    <span style="color:${color}">${item.score >= 0 ? '+' : ''}${pct}%</span>
+                </div>
+                <div style="height:3px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;">
+                    <div style="height:100%; width:${Math.min(100, pct)}%; background:${color};"></div>
+                </div>
+            </div>
+        `;
+    });
+}
 
 // Initial build
 setTimeout(buildTestInputs, 2000);

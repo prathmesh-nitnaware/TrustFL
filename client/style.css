@@ -315,3 +315,47 @@ header {
     height: 100%;
     background: var(--accent);
 }
+
+/* XAI Tabs Styling */
+.xai-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.xai-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-secondary);
+    padding: 2px;
+    border-radius: 6px;
+}
+
+.xai-tab {
+    padding: 4px 12px;
+    border: none;
+    background: transparent;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.xai-tab.active {
+    background: white;
+    color: var(--accent);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.xai-content {
+    animation: fadeIn 0.3s ease;
+    text-align: left;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}

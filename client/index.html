@@ -234,10 +234,21 @@
                     
                     <!-- XAI Explanation -->
                     <div id="xaiExplanation" class="xai-explanation hidden" style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 10px;">
-                        <h4 style="font-size: 0.9rem; color: var(--text-primary); margin-bottom: 8px;">
-                            <i class="fa-solid fa-brain" style="color: var(--accent);"></i> AI Explanation
-                        </h4>
-                        <div id="xaiList" class="xai-list-container"></div>
+                        <div class="xai-header">
+                            <h4 style="font-size: 0.9rem; color: var(--text-primary); margin: 0;">
+                                <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--accent);"></i> AI Explanations
+                            </h4>
+                            <div class="xai-tabs">
+                                <button class="xai-tab active" onclick="showXaiTab('saliency')">Saliency</button>
+                                <button class="xai-tab" onclick="showXaiTab('shap')">SHAP</button>
+                                <button class="xai-tab" onclick="showXaiTab('lime')">LIME</button>
+                            </div>
+                        </div>
+                        <div class="xai-body">
+                            <div id="xaiSaliency" class="xai-content"></div>
+                            <div id="xaiShap" class="xai-content hidden"></div>
+                            <div id="xaiLime" class="xai-content hidden"></div>
+                        </div>
                     </div>
                 </div>
             </section>

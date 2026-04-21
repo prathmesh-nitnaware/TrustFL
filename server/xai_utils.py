@@ -1,5 +1,10 @@
 import torch
 import numpy as np
+import shap
+import lime
+import lime.lime_tabular
+import warnings
+warnings.filterwarnings("ignore")
 
 def get_feature_importance(model, feature_names=None):
     """
@@ -68,3 +73,68 @@ def explain_prediction(model, input_tensor, feature_names=None):
         
     result.sort(key=lambda x: x["score"], reverse=True)
     return result
+
+def explain_prediction_shap(model, input_tensor, background_data=None, feature_names=None):
+    """
+    XAI: SHAP (SHapley Additive exPlanations).
+    Uses DeepExplainer for PyTorch models.
+    """
+    try:
+        # If no background data, use a small synthetic one (not ideal, but works for demo)
+        if background_data is None:
+            num_features = input_tensor.shape[1]
+            background_data = torch.zeros((10, num_features))
+        
+        explainer = shap.DeepExplainer(model, background_data)
+        shap_values = explainer.shap_values(input_tensor)
+        
+        with torch.no_grad():
+            output = model(input_tensor)
+            pred_class = torch.argmax(output).item()
+            
+        if isinstance(shap_values, list):
+            class_shap = shap_values[pred_class][0]
+        else:
+            class_shap = shap_values[0]
+
+        result = []
+        for i, val in enumerate(class_shap):
+            name = feature_names[i] if feature_names and i < len(feature_names) else f"Feature {i}"
+            result.append({"feature": name, "score": float(val)})
+            
+        result.sort(key=lambda x: abs(x["score"]), reverse=True)
+        return result
+    except Exception as e:
+        return [{"feature": "SHAP Error", "score": 0, "error": str(e)}]
+
+def explain_prediction_lime(model, input_tensor, feature_names=None):
+    """
+    XAI: LIME (Local Interpretable Model-Agnostic Explanations).
+    Generates a local linear approximation of the model around the sample.
+    """
+    try:
+        num_features = input_tensor.shape[1]
+        # Create a synthetic training set for LIME if none provided
+        training_data = np.random.normal(0, 1, size=(100, num_features))
+        
+        explainer = lime.lime_tabular.LimeTabularExplainer(
+            training_data,
+            feature_names=feature_names,
+            mode='classification'
+        )
+        
+        def predict_fn(x):
+            t = torch.tensor(x, dtype=torch.float32)
+            with torch.no_grad():
+                logits = model(t)
+                probs = torch.nn.functional.softmax(logits, dim=1)
+            return probs.numpy()
+        
+        exp = explainer.explain_instance(input_tensor[0].detach().numpy(), predict_fn)
+        
+        result = []
+        for desc, weight in exp.as_list():
+            result.append({"feature": desc, "score": float(weight)})
+        return result
+    except Exception as e:
+        return [{"feature": "LIME Error", "score": 0, "error": str(e)}]

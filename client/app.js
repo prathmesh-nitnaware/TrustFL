@@ -128,7 +128,11 @@ async function handleSignup() {
         const data = await resp.json();
         
         if (!resp.ok) {
-            errEl.textContent = data.detail || "Registration failed.";
+            if (resp.status === 409) {
+                errEl.textContent = "Account already exists. Try signing in instead.";
+            } else {
+                errEl.textContent = data.detail || "Registration failed.";
+            }
             btn.disabled = false;
             btn.innerHTML = '<span>Create Account</span><i class="fa-solid fa-user-plus"></i>';
             return;
@@ -403,10 +407,23 @@ async function makePrediction() {
     
     // Gather input values
     const inputData = {};
+    let empty = false;
     featureColumns.forEach(col => {
-        const val = document.getElementById(`pred_${col}`).value.trim();
-        inputData[col] = isNaN(val) || val === "" ? val : parseFloat(val);
+        const input = document.getElementById(`pred_${col}`);
+        const val = input.value.trim();
+        if (val === "") {
+            input.style.borderColor = "var(--error)";
+            empty = true;
+        } else {
+            input.style.borderColor = "var(--border)";
+        }
+        inputData[col] = isNaN(val) ? val : parseFloat(val);
     });
+
+    if (empty) {
+        alert("Please fill in all input fields for prediction.");
+        return;
+    }
     
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Predicting...';
@@ -449,32 +466,25 @@ async function makePrediction() {
             });
         }
         
-        // XAI Explanation
+        // XAI Explanations
         const xaiEx = document.getElementById("xaiExplanation");
-        const xaiList = document.getElementById("xaiList");
-        if (data.explanation && data.explanation.length > 0) {
+        if ((data.explanation && data.explanation.length > 0) || (data.shap_explanation && data.shap_explanation.length > 0)) {
             xaiEx.classList.remove("hidden");
-            xaiList.innerHTML = "";
-            // Show top 5 features
-            data.explanation.slice(0, 5).forEach(item => {
-                const score = (item.score * 100).toFixed(1);
-                xaiList.innerHTML += `
-                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-secondary);">
-                        <span>${item.feature}</span>
-                        <span style="color:var(--accent); font-weight:600;">${score}% impact</span>
-                    </div>
-                    <div style="height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;">
-                        <div style="height:100%; width:${score}%; background:var(--accent);"></div>
-                    </div>
-                `;
-            });
+            
+            renderXaiList("xaiSaliency", data.explanation || []);
+            renderXaiList("xaiShap", data.shap_explanation || []);
+            renderXaiList("xaiLime", data.lime_explanation || []);
+            
+            // Show first available tab
+            if (data.explanation && data.explanation.length > 0) showXaiTab('saliency');
+            else if (data.shap_explanation && data.shap_explanation.length > 0) showXaiTab('shap');
         } else {
             xaiEx.classList.add("hidden");
         }
         
     } catch (err) {
         console.error(err);
-        alert("Prediction failed. Is the client node running?");
+        alert("Prediction failed. " + (err.message || "Is the client node running?"));
     }
     
     btn.disabled = false;
@@ -536,4 +546,46 @@ function updateStatus(status, message) {
     }
     
     msg.textContent = message || "";
+}
+
+function showXaiTab(type) {
+    document.querySelectorAll('.xai-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.xai-content').forEach(c => c.classList.add('hidden'));
+    
+    const activeTab = document.querySelector(`.xai-tab[onclick*="${type}"]`);
+    if (activeTab) activeTab.classList.add('active');
+    
+    const content = document.getElementById(`xai${type.charAt(0).toUpperCase() + type.slice(1)}`);
+    if (content) content.classList.remove('hidden');
+}
+
+function renderXaiList(containerId, list) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    if (!list || list.length === 0) {
+        container.innerHTML = '<p class="muted-text" style="font-size:0.8rem; padding:10px;">Explanation not available for this model source.</p>';
+        return;
+    }
+    
+    container.innerHTML = "";
+    // Show top 6 features
+    list.slice(0, 6).forEach(item => {
+        // Handle SHAP values which can be negative/positive
+        const absScore = Math.abs(item.score);
+        const displayScore = (absScore * 100).toFixed(1);
+        const color = item.score >= 0 ? "var(--accent)" : "#ef4444";
+        
+        container.innerHTML += `
+            <div style="margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-secondary); margin-bottom:2px;">
+                    <span title="${item.feature}">${item.feature.length > 25 ? item.feature.substring(0, 25) + '...' : item.feature}</span>
+                    <span style="color:${color}; font-weight:600;">${item.score >= 0 ? '+' : ''}${displayScore}%</span>
+                </div>
+                <div style="height:4px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden;">
+                    <div style="height:100%; width:${Math.min(100, displayScore)}%; background:${color};"></div>
+                </div>
+            </div>
+        `;
+    });
 }

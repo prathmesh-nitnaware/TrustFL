@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from core.models import GenericMLP
-from xai_utils import get_feature_importance, explain_prediction
+from xai_utils import get_feature_importance, explain_prediction, explain_prediction_shap, explain_prediction_lime
 
 # ── In-Memory Database (Replacing db.py) ──────────────────────────────────────
 app = FastAPI(title="TrustFL Aggregator")
@@ -586,6 +586,8 @@ async def predict(request: Request):
         # 4. Generate XAI explanation for this specific prediction
         feature_names = ["Age", "Sex", "ChestPain", "BloodPressure", "Cholesterol", "FastingSugar", "ECG", "MaxHeartRate", "ExerciseAngina", "STDepression", "Slope", "Vessels", "Thal"]
         explanation = explain_prediction(model, input_tensor, feature_names)
+        shap_explanation = explain_prediction_shap(model, input_tensor, feature_names=feature_names)
+        lime_explanation = explain_prediction_lime(model, input_tensor, feature_names=feature_names)
         
         return {
             "prediction": int(pred_idx.item()),
@@ -596,6 +598,8 @@ async def predict(request: Request):
                 "aggregation_method": "FedAvg"
             },
             "explanation": explanation,
+            "shap_explanation": shap_explanation,
+            "lime_explanation": lime_explanation,
             "status": "Verified against latest global aggregation"
         }
     except Exception as e:

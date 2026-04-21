@@ -390,12 +390,23 @@ async def predict(request: Request):
     
     body = await request.json()
     input_data = body.get("input_data", {})
+    sample = body.get("sample", None)
     use_global = body.get("use_global", False)
     server_url = body.get("server_url", "http://localhost:8000")
+    
+    # Get token from body or Authorization header
     token = body.get("token", "")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+
+    # Handle 'sample' list format (common in React dashboard)
+    if not input_data and isinstance(sample, list) and local_feature_columns:
+        input_data = {col: sample[i] for i, col in enumerate(local_feature_columns) if i < len(sample)}
     
     if not input_data:
-        raise HTTPException(status_code=400, detail="input_data is required")
+        raise HTTPException(status_code=400, detail="input_data or sample list is required")
     
     model_to_use = local_model
     

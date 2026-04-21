@@ -1,0 +1,71 @@
+{
+    "users": [
+        {
+            "id": 1,
+            "username": "Bhavesh Hospital",
+            "email": "haradb275@gmail.com",
+            "password_hash": "$2b$12$Fk2CGtTq9sgNKxY2PMWYdOi9aPgkV0EOJYSXDIHFnkibQSdOMirlW",
+            "created_at": "2026-04-21T10:25:15.503866",
+            "last_login": "2026-04-21T10:25:18.035596",
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "username": "ABC Hospital",
+            "email": "rushikeshmahajan705@gmail.com",
+            "password_hash": "$2b$12$TFq653bjKDXPpDV0BVK6VuOLF5I1aX314iaJJorBW4uEWC1sxQZ..",
+            "created_at": "2026-04-21T10:25:41.010842",
+            "last_login": "2026-04-21T10:25:43.341925",
+            "is_active": true
+        }
+    ],
+    "training_sessions": [
+        {
+            "id": 1,
+            "user_id": 2,
+            "username": "ABC Hospital",
+            "dataset_name": "synthetic_heart_dataset.csv",
+            "num_features": 13,
+            "num_samples": 200,
+            "accuracy": 45.0,
+            "loss": 0.7165020108222961,
+            "training_round": 1,
+            "created_at": "2026-04-21T10:26:14.088576"
+        },
+        {
+            "id": 2,
+            "user_id": 1,
+            "username": "Bhavesh Hospital",
+            "dataset_name": "sample_heart.csv",
+            "num_features": 13,
+            "num_samples": 80,
+            "accuracy": 56.25,
+            "loss": 0.7104036808013916,
+            "training_round": 2,
+            "created_at": "2026-04-21T10:29:53.918530"
+        }
+    ],
+    "federated_rounds": [
+        {
+            "id": 1,
+            "round_number": 1,
+            "num_participants": 1,
+            "avg_accuracy": 45.0,
+            "avg_loss": 0.7165020108222961,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-04-21T10:26:14.091575"
+        },
+        {
+            "id": 2,
+            "round_number": 2,
+            "num_participants": 1,
+            "avg_accuracy": 56.25,
+            "avg_loss": 0.7104036808013916,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-04-21T10:29:53.921870"
+        }
+    ],
+    "next_user_id": 3,
+    "next_session_id": 3,
+    "next_round_id": 3
+}

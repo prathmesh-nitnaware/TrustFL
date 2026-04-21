@@ -467,13 +467,37 @@ async def predict(request: Request):
         input_scaled = local_scaler.transform(input_df.values.astype(np.float32))
         input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
         
-        model_to_use.eval()
-        with torch.no_grad():
-            output = model_to_use(input_tensor)
-            probs = torch.nn.functional.softmax(output[0], dim=0)
-            pred_idx = torch.argmax(probs).item()
-            confidence = probs[pred_idx].item() * 100
+        # ── Prediction Logic ──
+        local_probs = None
+        if local_model is not None:
+            local_model.eval()
+            with torch.no_grad():
+                l_out = local_model(input_tensor)
+                local_probs = torch.nn.functional.softmax(l_out[0], dim=0)
         
+        global_probs = None
+        if model_to_use is not None and model_to_use != local_model:
+            model_to_use.eval()
+            with torch.no_grad():
+                g_out = model_to_use(input_tensor)
+                global_probs = torch.nn.functional.softmax(g_out[0], dim=0)
+        
+        # Determine the final probabilities (Ensemble vs Single)
+        if local_probs is not None and global_probs is not None:
+            # Simple average ensemble
+            probs = (local_probs + global_probs) / 2
+            model_source = "Ensemble (Local + Global)"
+        elif global_probs is not None:
+            probs = global_probs
+            model_source = "Global (Federated)"
+        elif local_probs is not None:
+            probs = local_probs
+            model_source = "Local"
+        else:
+            raise HTTPException(status_code=400, detail="No model available for prediction.")
+
+        pred_idx = torch.argmax(probs).item()
+        confidence = probs[pred_idx].item() * 100
         prediction = local_label_encoder.inverse_transform([pred_idx])[0]
         
         # All class probabilities
@@ -496,7 +520,7 @@ async def predict(request: Request):
             "prediction": str(prediction),
             "confidence": round(confidence, 2),
             "probabilities": all_probs,
-            "model_source": "global (federated)" if use_global else "local",
+            "model_source": model_source,
             "explanation": saliency_exp, # Keep original key for compatibility
             "shap_explanation": shap_exp,
             "lime_explanation": lime_exp

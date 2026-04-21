@@ -527,7 +527,7 @@ function App() {
                   >
                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1">Diagnostic Output</span>
                     <div className="text-4xl font-black tracking-tight text-slate-900 leading-none">
-                      {prediction.prediction === 1 ? 'Cardiac Alert' : 'Healthy Protocol'}
+                      {prediction.prediction == 1 ? 'Cardiac Alert' : 'Healthy Protocol'}
                     </div>
                     <div className="mt-4 flex items-center gap-2">
                        <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">

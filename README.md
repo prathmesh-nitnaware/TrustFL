@@ -89,11 +89,6 @@ npm install
 npm run dev
 ```
 
----
-
-## ⚖️ License
-
-Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 **Developed by prathmesh-nitnaware | Federated Governance & Secure AI**
